@@ -174,7 +174,7 @@ class IVON(torch.optim.Optimizer):
             losses = []
             for _ in range(self.mc_samples):
                 with torch.enable_grad():
-                    with self.sampled_params():
+                    with self.sampled_params(train=True):
                         loss = closure()
                 losses.append(loss)
             loss = sum(losses) / self.mc_samples
