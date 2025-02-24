@@ -238,6 +238,12 @@ class IVON(torch.optim.Optimizer):
 
         offset = 0
         for group in self.param_groups:
+            for p in group["params"]:
+                if p is None:
+                    continue
+                group_device = p.device
+                break
+
             lr = group["lr"]
             b1 = group["beta1"]
             b2 = group["beta2"]
@@ -246,6 +252,8 @@ class IVON(torch.optim.Optimizer):
             param_avg = torch.cat(
                 [p.flatten() for p in group["params"] if p is not None], 0
             )
+
+            group["momentum"] = group["momentum"].to(group_device)
 
             group["momentum"] = self._new_momentum(
                 self.state["avg_grad"][pg_slice], group["momentum"], b1
