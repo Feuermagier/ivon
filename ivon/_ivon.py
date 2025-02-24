@@ -198,8 +198,17 @@ class IVON(torch.optim.Optimizer):
         offset = 0
         for group in self.param_groups:
             gnumel = group["numel"]
+
+            for p in group["params"]:
+                if p is None:
+                    continue
+                group_device = p.device
+                break
+
+            group["hess"] = group["hess"].to(group_device)
+
             noise_sample = (
-                torch.randn(gnumel, device=self._device, dtype=self._dtype)
+                torch.randn(gnumel, device=group_device, dtype=self._dtype)
                 / (
                     group["ess"] * (group["hess"] + group["weight_decay"])
                 ).sqrt()
