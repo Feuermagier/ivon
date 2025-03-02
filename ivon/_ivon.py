@@ -128,8 +128,10 @@ class IVON(torch.optim.Optimizer):
     @contextmanager
     def sampled_params(self, train: bool = False):
         param_avg, noise = self._sample_params()
-        yield
-        self._restore_param_average(train, param_avg, noise)
+        try:
+            yield
+        finally:
+            self._restore_param_average(train, param_avg, noise)
 
     def _restore_param_average(
         self, train: bool, param_avg: Tensor, noise: Tensor
