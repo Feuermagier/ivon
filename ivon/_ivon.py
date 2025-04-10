@@ -74,7 +74,7 @@ class IVON(torch.optim.Optimizer):
         self.mc_samples = mc_samples
         self.hess_approx = hess_approx
         self.sync = sync
-        self._numel, self._device, self._dtype = self._get_param_configs()
+        self._numel, self._dtype = self._get_param_configs()
         self.current_step = 0
         self.debias = debias
         self.rescale_lr = rescale_lr
@@ -90,14 +90,8 @@ class IVON(torch.optim.Optimizer):
             pg["numel"] = sum(p.numel() for p in pg["params"] if p is not None)
             all_params += [p for p in pg["params"] if p is not None]
         if len(all_params) == 0:
-            return 0, torch.device("cpu"), torch.get_default_dtype()
-        devices = {p.device for p in all_params}
-        if len(devices) > 1:
-            raise ValueError(
-                "Parameters are on different devices: "
-                f"{[str(d) for d in devices]}"
-            )
-        device = next(iter(devices))
+            return 0, torch.get_default_dtype()
+
         dtypes = {p.dtype for p in all_params}
         if len(dtypes) > 1:
             raise ValueError(
@@ -106,7 +100,7 @@ class IVON(torch.optim.Optimizer):
             )
         dtype = next(iter(dtypes))
         total = sum(pg["numel"] for pg in self.param_groups)
-        return total, device, dtype
+        return total, dtype
 
     def _reset_samples(self):
         self.state['count'] = 0
@@ -118,11 +112,13 @@ class IVON(torch.optim.Optimizer):
         for group in self.param_groups:
             hess_init, numel = group["hess_init"], group["numel"]
 
+            group_device = IVON._find_group_device(group, check_same_device=True)
+
             group["momentum"] = torch.zeros(
-                numel, device=self._device, dtype=self._dtype
+                numel, device=group_device, dtype=self._dtype
             )
             group["hess"] = torch.zeros(
-                numel, device=self._device, dtype=self._dtype
+                numel, device=group_device, dtype=self._dtype
             ).add(torch.as_tensor(hess_init))
 
     @contextmanager
@@ -201,11 +197,7 @@ class IVON(torch.optim.Optimizer):
         for group in self.param_groups:
             gnumel = group["numel"]
 
-            for p in group["params"]:
-                if p is None:
-                    continue
-                group_device = p.device
-                break
+            group_device = IVON._find_group_device(group, check_same_device=False)
 
             group["hess"] = group["hess"].to(group_device)
 
@@ -240,11 +232,7 @@ class IVON(torch.optim.Optimizer):
 
         offset = 0
         for group in self.param_groups:
-            for p in group["params"]:
-                if p is None:
-                    continue
-                group_device = p.device
-                break
+            group_device = IVON._find_group_device(group, check_same_device=True)
 
             lr = group["lr"]
             b1 = group["beta1"]
@@ -327,3 +315,26 @@ class IVON(torch.optim.Optimizer):
             min=-clip_radius,
             max=clip_radius,
         )
+
+    @staticmethod
+    def _find_group_device(group, check_same_device=True):
+        group_device = None
+        for p in group["params"]:
+            if p is None:
+                continue
+
+            if group_device is None:
+                group_device = p.device
+            elif group_device != p.device:
+                raise ValueError(
+                    "Parameters are on different devices: "
+                    f"{group_device} and {p.device}"
+                )
+
+            if not check_same_device:
+                return group_device
+
+        if group_device is None:
+            return torch.device("cpu")
+
+        return group_device
